@@ -1,0 +1,267 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:c2a6a568-78dc-50cf-93ca-139e9624cc61",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "KuSys",
+      "version": "1.0.0"
+    }
+  },
+  "components": [
+    {
+      "type": "container",
+      "name": "postgres",
+      "version": "18.6-alpine3.24",
+      "purl": "pkg:docker/postgres@18.6-alpine3.24"
+    },
+    {
+      "type": "container",
+      "name": "redis",
+      "version": "8.10.2-alpine",
+      "purl": "pkg:docker/redis@8.10.2-alpine"
+    },
+    {
+      "type": "library",
+      "name": "@dnd-kit/core",
+      "version": "6.3.1",
+      "purl": "pkg:npm/@dnd-kit/core@6.3.1"
+    },
+    {
+      "type": "library",
+      "name": "@emotion/react",
+      "version": "11.14.0",
+      "purl": "pkg:npm/@emotion/react@11.14.0"
+    },
+    {
+      "type": "library",
+      "name": "@emotion/styled",
+      "version": "11.14.1",
+      "purl": "pkg:npm/@emotion/styled@11.14.1"
+    },
+    {
+      "type": "library",
+      "name": "@mui/icons-material",
+      "version": "9.4.0",
+      "purl": "pkg:npm/@mui/icons-material@9.4.0"
+    },
+    {
+      "type": "library",
+      "name": "@mui/material",
+      "version": "9.4.0",
+      "purl": "pkg:npm/@mui/material@9.4.0"
+    },
+    {
+      "type": "library",
+      "name": "@playwright/test",
+      "version": "1.63.0",
+      "purl": "pkg:npm/@playwright/test@1.63.0"
+    },
+    {
+      "type": "library",
+      "name": "@tanstack/react-query",
+      "version": "5.103.2",
+      "purl": "pkg:npm/@tanstack/react-query@5.103.2"
+    },
+    {
+      "type": "library",
+      "name": "@tanstack/react-table",
+      "version": "9.2.4",
+      "purl": "pkg:npm/@tanstack/react-table@9.2.4"
+    },
+    {
+      "type": "library",
+      "name": "@tiptap/react",
+      "version": "3.31.3",
+      "purl": "pkg:npm/@tiptap/react@3.31.3"
+    },
+    {
+      "type": "library",
+      "name": "@tiptap/starter-kit",
+      "version": "3.31.3",
+      "purl": "pkg:npm/@tiptap/starter-kit@3.31.3"
+    },
+    {
+      "type": "library",
+      "name": "@types/react",
+      "version": "19.2.14",
+      "purl": "pkg:npm/@types/react@19.2.14"
+    },
+    {
+      "type": "library",
+      "name": "@types/react-dom",
+      "version": "19.2.3",
+      "purl": "pkg:npm/@types/react-dom@19.2.3"
+    },
+    {
+      "type": "library",
+      "name": "@vitejs/plugin-react",
+      "version": "6.1.1",
+      "purl": "pkg:npm/@vitejs/plugin-react@6.1.1"
+    },
+    {
+      "type": "library",
+      "name": "alembic",
+      "version": "1.20.0",
+      "purl": "pkg:pypi/alembic@1.20.0"
+    },
+    {
+      "type": "library",
+      "name": "argon2-cffi",
+      "version": "25.1.0",
+      "purl": "pkg:pypi/argon2-cffi@25.1.0"
+    },
+    {
+      "type": "library",
+      "name": "celery",
+      "version": "5.6.3",
+      "purl": "pkg:pypi/celery@5.6.3"
+    },
+    {
+      "type": "library",
+      "name": "cryptography",
+      "version": "50.0.1",
+      "purl": "pkg:pypi/cryptography@50.0.1"
+    },
+    {
+      "type": "library",
+      "name": "fastapi",
+      "version": "0.141.1",
+      "purl": "pkg:pypi/fastapi@0.141.1"
+    },
+    {
+      "type": "library",
+      "name": "httpx",
+      "version": "0.28.1",
+      "purl": "pkg:pypi/httpx@0.28.1"
+    },
+    {
+      "type": "library",
+      "name": "ocrmypdf",
+      "version": "17.12.1",
+      "purl": "pkg:pypi/ocrmypdf@17.12.1"
+    },
+    {
+      "type": "library",
+      "name": "openpyxl",
+      "version": "3.1.5",
+      "purl": "pkg:pypi/openpyxl@3.1.5"
+    },
+    {
+      "type": "library",
+      "name": "pdfplumber",
+      "version": "0.11.10",
+      "purl": "pkg:pypi/pdfplumber@0.11.10"
+    },
+    {
+      "type": "library",
+      "name": "psycopg",
+      "version": "3.3.6",
+      "purl": "pkg:pypi/psycopg@3.3.6"
+    },
+    {
+      "type": "library",
+      "name": "pydantic",
+      "version": "2.13.5",
+      "purl": "pkg:pypi/pydantic@2.13.5"
+    },
+    {
+      "type": "library",
+      "name": "pydantic-settings",
+      "version": "2.15.0",
+      "purl": "pkg:pypi/pydantic-settings@2.15.0"
+    },
+    {
+      "type": "library",
+      "name": "PyMuPDF",
+      "version": "1.28.2",
+      "purl": "pkg:pypi/pymupdf@1.28.2"
+    },
+    {
+      "type": "library",
+      "name": "pytest",
+      "version": "9.1.1",
+      "purl": "pkg:pypi/pytest@9.1.1"
+    },
+    {
+      "type": "library",
+      "name": "pytest-cov",
+      "version": "7.1.0",
+      "purl": "pkg:pypi/pytest-cov@7.1.0"
+    },
+    {
+      "type": "library",
+      "name": "python-docx",
+      "version": "1.2.0",
+      "purl": "pkg:pypi/python-docx@1.2.0"
+    },
+    {
+      "type": "library",
+      "name": "python-multipart",
+      "version": "0.0.32",
+      "purl": "pkg:pypi/python-multipart@0.0.32"
+    },
+    {
+      "type": "library",
+      "name": "PyYAML",
+      "version": "6.0.3",
+      "purl": "pkg:pypi/pyyaml@6.0.3"
+    },
+    {
+      "type": "library",
+      "name": "react",
+      "version": "19.3.0",
+      "purl": "pkg:npm/react@19.3.0"
+    },
+    {
+      "type": "library",
+      "name": "react-dom",
+      "version": "19.3.0",
+      "purl": "pkg:npm/react-dom@19.3.0"
+    },
+    {
+      "type": "library",
+      "name": "react-router",
+      "version": "8.3.1",
+      "purl": "pkg:npm/react-router@8.3.1"
+    },
+    {
+      "type": "library",
+      "name": "redis",
+      "version": "8.1.0",
+      "purl": "pkg:pypi/redis@8.1.0"
+    },
+    {
+      "type": "library",
+      "name": "ruff",
+      "version": "0.16.8",
+      "purl": "pkg:pypi/ruff@0.16.8"
+    },
+    {
+      "type": "library",
+      "name": "SQLAlchemy",
+      "version": "2.0.54",
+      "purl": "pkg:pypi/sqlalchemy@2.0.54"
+    },
+    {
+      "type": "library",
+      "name": "typescript",
+      "version": "7.0.2",
+      "purl": "pkg:npm/typescript@7.0.2"
+    },
+    {
+      "type": "library",
+      "name": "uvicorn",
+      "version": "0.51.0",
+      "purl": "pkg:pypi/uvicorn@0.51.0"
+    },
+    {
+      "type": "library",
+      "name": "vite",
+      "version": "8.3.0",
+      "purl": "pkg:npm/vite@8.3.0"
+    }
+  ]
+}

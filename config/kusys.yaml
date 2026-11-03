@@ -1,0 +1,41 @@
+locale: de-DE
+timezone: Europe/Berlin
+currency: EUR
+
+runtime:
+  app_version: 1.0.0
+
+storage:
+  backend: local-filesystem
+  path: ./artifacts
+  future_adapter: s3-compatible
+
+security:
+  session_idle_minutes: 480
+  session_absolute_hours: 24
+  failed_login_threshold: 5
+  base_lock_seconds: 300
+  csrf_required: true
+  secure_cookies: false   # true behind HTTPS in production
+
+documents:
+  max_upload_bytes: 209715200
+  max_pdf_pages: 500
+  ocr_threshold_chars_per_page: 120
+  accepted_formats: [pdf, docx, png]
+
+planning:
+  hours_per_day_default: 8
+  resource_leveling: true
+  work_package_default_max_fte: 1.0
+
+offers:
+  validity_days_default: 30
+  vat_percent_default: 19
+  four_eyes_default: true
+  immutable_from_status: freigegeben
+
+analysis:
+  provider: rule-based
+  max_chars: 60000
+  external_ai_required: false

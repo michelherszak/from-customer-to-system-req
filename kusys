@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT"
+cmd="${1:-help}"; shift || true
+ensure_config(){ [[ -f config/kusys.yaml ]] || cp config/kusys.example.yaml config/kusys.yaml; [[ -f .env ]] || { cp .env.example .env; echo "Hinweis: .env wurde aus .env.example angelegt. Secrets vor Produktivbetrieb ändern." >&2; }; }
+case "$cmd" in
+  up) ensure_config; eval "$(./ops/port-fallback.sh)"; export KUSYS_FRONTEND_PORT KUSYS_BACKEND_PORT KUSYS_FRONTEND_ORIGIN; docker compose up -d --build "$@" ;;
+  dev) ensure_config; eval "$(./ops/port-fallback.sh)"; export KUSYS_FRONTEND_PORT KUSYS_BACKEND_PORT KUSYS_FRONTEND_ORIGIN; docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build "$@" ;;
+  down) docker compose down "$@" ;;
+  logs) docker compose logs -f "$@" ;;
+  test) (cd backend && pytest -q "$@") ;;
+  migrate) ensure_config; ./ops/migrate.sh "$@" ;;
+  seed) docker compose run --rm backend python -m kusys.seed ;;
+  backup) ensure_config; ./ops/backup/backup.sh "${1:-$ROOT/backups}" ;;
+  restore) [[ $# -ge 1 ]] || { echo "usage: ./kusys restore <backup-directory>" >&2; exit 2; }; ./ops/restore/restore.sh "$@" ;;
+  health) ./ops/health/check.sh "$@" ;;
+  verify) ./ops/release/verify_release.sh "$@" ;;
+  locks) ./ops/release/lock_backend.sh; ./ops/release/lock_frontend.sh ;;
+  *) cat <<'TXT'
+KuSys commands:
+  ./kusys up             Start local/pilot stack
+  ./kusys dev            Start development stack
+  ./kusys down           Stop stack
+  ./kusys logs           Follow logs
+  ./kusys test           Run backend tests
+  ./kusys migrate        Backup then migrate existing DB
+  ./kusys seed           Load idempotent demo data
+  ./kusys backup [dir]   Create validated full backup
+  ./kusys restore <dir>  Restore validated full backup
+  ./kusys health         Check Docker service health
+  ./kusys verify         Run local release verification
+  ./kusys locks          Generate full backend/frontend locks (requires registries)
+TXT
+  ;;
+esac

@@ -1,0 +1,20 @@
+services:
+  backend:
+    command: ["uvicorn", "kusys.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    environment:
+      KUSYS_INLINE_JOBS: "true"
+    volumes:
+      - ./backend:/app
+      - ./config:/app/config:ro
+      - ./artifacts:/data/artifacts
+
+  frontend:
+    image: node:26.10.0-alpine3.24
+    working_dir: /app
+    command: ["sh", "-c", "npm install --no-audit --no-fund && npm run dev -- --host 0.0.0.0"]
+    environment:
+      VITE_API_URL: http://localhost:${KUSYS_BACKEND_PORT:-8000}/api/v1
+    volumes:
+      - ./apps/frontend:/app
+    ports:
+      - "${KUSYS_FRONTEND_PORT:-5173}:5173"

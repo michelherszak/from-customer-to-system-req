@@ -1,0 +1,137 @@
+spec:
+  name: KuSys Rebuild Specification
+  date: 2026-09-24
+  locale: de-DE
+  timezone: Europe/Berlin
+
+product:
+  version: 1.0.0
+  architecture: modular-monolith
+  currency: EUR
+  money_decimals: 2
+  hours_decimals: 0
+  soft_delete: true
+
+runtime:
+  frontend:
+    node: 26.10.0
+    react: 19.3.0
+    typescript: 7.0.2
+    vite: 8.3.0
+    react_router: 8.3.1
+    mui: 9.4.0
+    tanstack_query: 5.103.2
+    tanstack_table: 9.2.4
+    tiptap: 3.31.3
+    dnd_kit_core: 6.3.1
+  backend:
+    python: 3.14.7
+    fastapi: 0.141.1
+    uvicorn: 0.51.0
+    pydantic: 2.13.5
+    pydantic_settings: 2.15.0
+    sqlalchemy: 2.0.54
+    alembic: 1.20.0
+    psycopg: 3.3.6
+  database:
+    engine: PostgreSQL
+    image: postgres:18.6-alpine3.24
+  queue:
+    celery: 5.6.3
+    redis_python: 8.1.0
+    redis_image: redis:8.10.2-alpine
+  proxy:
+    nginx_image: nginx:1.31.6-alpine3.24-slim
+
+storage:
+  artifact_backend: local-filesystem
+  metadata_backend: postgresql
+  future_adapter: s3-compatible
+
+ocr:
+  pymupdf: 1.28.2
+  pdfplumber: 0.11.10
+  ocrmypdf: 17.12.1
+  threshold_chars_per_page: 120
+  docx: never
+  png: always
+  pdf_if_any_scan_page: whole-document-ocr
+  final_source_selection: per-page-quality
+  languages: [deu, eng]
+
+security:
+  password_hash_preferred: Argon2id
+  session_idle_minutes: 480
+  session_absolute_hours: 24
+  cookie_http_only: true
+  cookie_same_site: Lax
+  cookie_secure_production: true
+  csrf_required: true
+  failed_login_threshold: 5
+  base_lock_seconds: 300
+  secret_master_key_outside_database: true
+
+roles:
+  values:
+    - platform_admin
+    - company_admin
+    - project_lead
+    - project_member
+    - customer
+  project_member_can_view_costs: true
+  platform_admin_requires_company_grant: true
+
+requirements:
+  budget:
+    enabled: true
+    currency: EUR
+    optional_per_requirement: true
+    target_value_distinct_from_calculated_price: true
+  cost_attribution:
+    enabled: true
+    default_method: equal_share_across_linked_requirements
+    optional_weighting: true
+    rounding_reconciliation: largest_value_requirement
+  relations:
+    enabled: true
+    types: [requires, enables, conflicts_with, related_to, replaces, split_from]
+  impact_analysis:
+    enabled: true
+    include_transitive_dependencies: true
+    include_work_packages: true
+    include_material_items: true
+    include_hours: true
+    include_schedule: true
+    include_critical_path: true
+    include_costs: true
+    include_sales_price: true
+    include_margin: true
+    include_offer_variants: true
+    what_if_is_non_destructive: true
+
+planning:
+  hours_per_day_default: 8
+  resource_leveling: true
+  work_package_default_max_fte: 1.0
+  planning_priority_default: 3
+  phases: [Konzept, Spezifikation, Realisierung, Integration, Abnahme, Übergreifend]
+
+offers:
+  validity_days_default: 30
+  vat_percent_default: 19
+  four_eyes_default: true
+  immutable_from_status: freigegeben
+  status_flow: [Entwurf, zur Freigabe, freigegeben, versendet, angenommen, abgelehnt]
+
+backups:
+  before_schema_migration: required
+  before_full_reset: required
+  retention_count: 20
+  includes: [postgresql, artifacts, config_snapshot_without_plaintext_secrets, version_manifest]
+
+testing:
+  external_ai_required: false
+  external_ocr_required: false
+  synthetic_fixtures_only: true
+  browser_primary: Chromium
+  compatibility_browsers: [Chrome, Edge, Firefox, WebKit]

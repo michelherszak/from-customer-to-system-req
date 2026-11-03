@@ -1,0 +1,25 @@
+# KuSys direct dependency lock manifest, verified 2026-09-24.
+# Docker builds install the exact direct versions from pyproject.toml.
+# A fully resolved transitive lock is produced by ops/release/lock_backend.sh when registry access is available.
+fastapi==0.141.1
+uvicorn[standard]==0.51.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+SQLAlchemy==2.0.54
+alembic==1.20.0
+psycopg[binary]==3.3.6
+celery==5.6.3
+redis==8.1.0
+python-multipart==0.0.32
+python-docx==1.2.0
+openpyxl==3.1.5
+PyMuPDF==1.28.2
+pdfplumber==0.11.10
+ocrmypdf==17.12.1
+PyYAML==6.0.3
+argon2-cffi==25.1.0
+cryptography==50.0.1
+pytest==9.1.1
+pytest-cov==7.1.0
+httpx==0.28.1
+ruff==0.16.8

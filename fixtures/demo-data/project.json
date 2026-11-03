@@ -1,0 +1,6 @@
+{
+  "company": "VAZA Demo Engineering GmbH",
+  "customer": "Nordstern Verpackungstechnik GmbH",
+  "project": "PX-2400 – Modernisierung Verpackungslinie",
+  "requirements": ["REQ-0001", "REQ-0002", "REQ-0003"]
+}

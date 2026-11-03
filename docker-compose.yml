@@ -1,0 +1,112 @@
+services:
+  postgres:
+    image: postgres:18.6-alpine3.24
+    environment:
+      POSTGRES_DB: kusys
+      POSTGRES_USER: kusys
+      POSTGRES_PASSWORD: ${KUSYS_DB_PASSWORD:-kusys-dev-only}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kusys -d kusys"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.10.2-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["sh", "-c", "alembic -c alembic.ini upgrade head && python -m kusys.seed"]
+    environment: &backend_env
+      KUSYS_DATABASE_URL: postgresql+psycopg://kusys:${KUSYS_DB_PASSWORD:-kusys-dev-only}@postgres:5432/kusys
+      KUSYS_REDIS_URL: redis://redis:6379/0
+      KUSYS_STORAGE_PATH: /data/artifacts
+      KUSYS_MASTER_KEY: ${KUSYS_MASTER_KEY:-development-only-change-me}
+      KUSYS_INLINE_JOBS: "false"
+      KUSYS_SECURE_COOKIES: ${KUSYS_SECURE_COOKIES:-false}
+      KUSYS_FRONTEND_ORIGIN: ${KUSYS_FRONTEND_ORIGIN:-http://localhost:5173}
+      KUSYS_CONFIG_FILE: /app/config/kusys.example.yaml
+    volumes:
+      - artifacts_data:/data/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment: *backend_env
+    ports:
+      - "${KUSYS_BACKEND_PORT:-8000}:8000"
+    volumes:
+      - artifacts_data:/data/artifacts
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["celery", "-A", "kusys.jobs.celery_app:celery_app", "worker", "--loglevel=INFO", "--concurrency=2"]
+    environment: *backend_env
+    volumes:
+      - artifacts_data:/data/artifacts
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["celery", "-A", "kusys.jobs.celery_app:celery_app", "beat", "--loglevel=INFO"]
+    environment: *backend_env
+    volumes:
+      - artifacts_data:/data/artifacts
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build: ./apps/frontend
+    ports:
+      - "${KUSYS_FRONTEND_PORT:-5173}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  artifacts_data:
