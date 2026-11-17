@@ -25,6 +25,10 @@ if celery_app is not None:
             "recover-stale-jobs": {
                 "task": "kusys.recover_stale_jobs",
                 "schedule": 60.0,
-            }
+            },
+            "sync-gmail-offer-replies": {
+                "task": "kusys.sync_gmail_offer_replies",
+                "schedule": 60.0,
+            },
         },
     )

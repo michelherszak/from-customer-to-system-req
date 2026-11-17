@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import uuid
-from datetime import date
 from decimal import Decimal
+from datetime import date
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from kusys.artifacts.storage import persist_bytes
@@ -21,15 +20,15 @@ from kusys.offers.export import export_offer_docx, export_offer_xlsx
 from kusys.offers.service import canonical, clone_version, freeze, persist_calculation, preview
 from kusys.persistence.database import get_db
 from kusys.persistence.models import (
-    FileArtifact, Offer, OfferScopeItem, OfferSnapshot, OfferVersion, Project, PublishedArtifact, Requirement,
+    FileArtifact, Offer, OfferResponse, OfferScopeItem, OfferSnapshot, OfferVersion, Project, PublishedArtifact, Requirement, WorkPackage, Tenant,
 )
 
 router=APIRouter(tags=["offers"])
 settings=get_settings()
 
 class OfferCreate(BaseModel):
-    offer_number: str
-    variant_name: str = "Basis"
+    offer_number: str | None = Field(default=None, min_length=1, max_length=80)
+    variant_name: str = Field(default="Basis", min_length=1, max_length=160)
     primary_variant: bool = True
     language: str = "de"
 
@@ -57,6 +56,9 @@ class StatusRequest(BaseModel):
 def sv(v:OfferVersion)->dict:
     return {"id":str(v.id),"offer_id":str(v.offer_id),"version":v.version,"status":v.status,"offer_date":v.offer_date,"validity_days":v.validity_days,"language":v.language,"currency":v.currency,"risk_percent":str(v.risk_percent),"discount_percent":str(v.discount_percent),"vat_percent":str(v.vat_percent),"net_eur":str(v.net_eur),"gross_eur":str(v.gross_eur),"margin_eur":str(v.margin_eur),"baseline_id":str(v.baseline_id) if v.baseline_id else None,"recipient":v.recipient,"customer_reference":v.customer_reference,"internal_reference":v.internal_reference,"payment_plan":v.payment_plan,"lock_version":v.lock_version}
 
+def serialize_response(item: OfferResponse) -> dict:
+    return {"id":str(item.id),"author_name":item.author_name,"author_email":item.author_email,"channel":item.channel,"body":item.body,"created_at":item.created_at}
+
 @router.get("/projects/{project_id}/offers")
 def list_offers(project_id:uuid.UUID,db:Session=Depends(get_db),actor:Actor=Depends(require_actor)):
     require_project_access(db,actor,project_id)
@@ -69,9 +71,23 @@ def list_offers(project_id:uuid.UUID,db:Session=Depends(get_db),actor:Actor=Depe
 @router.post("/projects/{project_id}/offers")
 def create_offer(project_id:uuid.UUID,payload:OfferCreate,db:Session=Depends(get_db),actor:Actor=Depends(require_csrf)):
     require_project_access(db,actor,project_id,{"project_lead","company_admin"});p=db.get(Project,project_id)
+    if not p or p.deleted_at:raise HTTPException(404,"Projekt nicht gefunden")
+    if not db.scalar(select(Requirement.id).where(Requirement.project_id==project_id,Requirement.deleted_at.is_(None)).limit(1)) or not db.scalar(select(WorkPackage.id).where(WorkPackage.project_id==project_id,WorkPackage.deleted_at.is_(None)).limit(1)):
+        raise HTTPException(422,"Angebot benötigt übernommene Anforderungen und Arbeitspakete. Zuerst Engineering-Review abschließen und Ergebnisse übernehmen.")
+    # Offer numbers are unique within the company, including other projects.
+    db.scalar(select(Tenant).where(Tenant.id==p.tenant_id).with_for_update())
+    number=payload.offer_number.strip() if payload.offer_number else None
+    if payload.offer_number and not number:raise HTTPException(422,"Angebotsnummer darf nicht leer sein")
+    if number is None:
+        prefix=f"ANG-{date.today().year}-"
+        numbers=list(db.scalars(select(Offer.offer_number).where(Offer.tenant_id==p.tenant_id)))
+        suffixes=[int(value[len(prefix):]) for value in numbers if value.startswith(prefix) and value[len(prefix):].isdigit()]
+        number=f"{prefix}{max(suffixes,default=0)+1:04d}"
+    if db.scalar(select(Offer.id).where(Offer.tenant_id==p.tenant_id,Offer.offer_number==number,Offer.variant_name==payload.variant_name)):
+        raise HTTPException(409,"Angebotsnummer und Variantenname sind bereits vergeben")
     if payload.primary_variant:
         for old in db.scalars(select(Offer).where(Offer.project_id==project_id,Offer.primary_variant.is_(True))):old.primary_variant=False
-    o=Offer(tenant_id=p.tenant_id,project_id=project_id,offer_number=payload.offer_number,variant_name=payload.variant_name,primary_variant=payload.primary_variant,created_by=actor.user.id);db.add(o);db.flush()
+    o=Offer(tenant_id=p.tenant_id,project_id=project_id,offer_number=number,variant_name=payload.variant_name,primary_variant=payload.primary_variant,created_by=actor.user.id);db.add(o);db.flush()
     v=OfferVersion(offer_id=o.id,version=1,status="Entwurf",language=payload.language,vat_percent=Decimal(str(settings.vat_percent_default)),created_by=actor.user.id);db.add(v);db.flush()
     for r in db.scalars(select(Requirement).where(Requirement.project_id==project_id,Requirement.deleted_at.is_(None))):db.add(OfferScopeItem(offer_version_id=v.id,requirement_id=r.id,included=True,created_by=actor.user.id))
     db.commit();return {"offer_id":str(o.id),"version":sv(v)}
@@ -121,11 +137,23 @@ def offer_preview(version_id:uuid.UUID,db:Session=Depends(get_db),actor:Actor=De
     snap=db.scalar(select(OfferSnapshot).where(OfferSnapshot.offer_version_id==v.id))
     return snap.snapshot_json if snap and v.status not in {"Entwurf","zur Freigabe"} else preview(db,v)
 
+@router.get("/offer-versions/{version_id}/responses")
+def list_responses(version_id:uuid.UUID,db:Session=Depends(get_db),actor:Actor=Depends(require_actor)):
+    v=db.get(OfferVersion,version_id)
+    if not v:raise HTTPException(404,"Angebotsversion nicht gefunden")
+    o=db.get(Offer,v.offer_id);require_project_access(db,actor,o.project_id)
+    from kusys.gmail_api import sync_offer_replies
+    sync_offer_replies(db,v)
+    return [serialize_response(item) for item in db.scalars(select(OfferResponse).where(OfferResponse.offer_version_id==version_id).order_by(OfferResponse.created_at))]
+
 @router.post("/offer-versions/{version_id}/status")
 def change_status(version_id:uuid.UUID,payload:StatusRequest,db:Session=Depends(get_db),actor:Actor=Depends(require_csrf)):
     v=db.get(OfferVersion,version_id)
     if not v:raise HTTPException(404,"Angebotsversion nicht gefunden")
-    o=db.get(Offer,v.offer_id);require_project_access(db,actor,o.project_id,{"project_lead","company_admin"})
+    o=db.get(Offer,v.offer_id)
+    allowed_roles={"project_lead","company_admin"}
+    if payload.target_status=="freigegeben":allowed_roles.add("project_member")
+    require_project_access(db,actor,o.project_id,allowed_roles)
     allowed={"Entwurf":{"zur Freigabe"},"zur Freigabe":{"Entwurf","freigegeben"},"freigegeben":{"versendet"},"versendet":{"angenommen","abgelehnt"},"angenommen":set(),"abgelehnt":set()}
     if payload.target_status not in allowed.get(v.status,set()):raise HTTPException(409,f"Statuswechsel {v.status} → {payload.target_status} ist nicht zulässig")
     if v.status=="zur Freigabe" and payload.target_status=="Entwurf" and not (payload.comment or "").strip():raise HTTPException(422,"Pflichtkommentar erforderlich")
@@ -154,19 +182,23 @@ def export(version_id:uuid.UUID,format:str="docx",internal:bool=True,db:Session=
     snap=db.scalar(select(OfferSnapshot).where(OfferSnapshot.offer_version_id==v.id))
     fmt=format.lower()
     if fmt not in {"docx","xlsx"}:raise HTTPException(422,"Exportformat muss docx oder xlsx sein")
-    if snap and v.status not in {"Entwurf","zur Freigabe"}:
+    responses=list(db.scalars(select(OfferResponse).where(OfferResponse.offer_version_id==v.id).order_by(OfferResponse.created_at))) if fmt=="docx" else []
+    if snap and v.status not in {"Entwurf","zur Freigabe"} and not responses:
         existing=db.scalar(select(PublishedArtifact).where(PublishedArtifact.offer_version_id==v.id,PublishedArtifact.kind==fmt,PublishedArtifact.immutable.is_(True)).order_by(PublishedArtifact.created_at.desc()))
         if existing:
             artifact=db.get(FileArtifact,existing.file_artifact_id)
             if artifact:return {"artifact_id":str(artifact.id),"filename":artifact.filename,"sha256":artifact.sha256}
-    data=snap.snapshot_json if snap else preview(db,v)
+    data=dict(snap.snapshot_json) if snap else preview(db,v)
+    if responses:
+        data["customer_responses"]=[serialize_response(item) for item in responses]
     suffix=".docx" if fmt=="docx" else ".xlsx"
     with NamedTemporaryFile(suffix=suffix,delete=False) as tmp:path=Path(tmp.name)
     try:
         if suffix==".docx":export_offer_docx(path,data);mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         else:export_offer_xlsx(path,data,internal=internal);mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        bytes_=path.read_bytes();artifact=persist_bytes(db,bytes_,tenant_id=o.tenant_id,project_id=o.project_id,filename=f"{o.offer_number}_{o.variant_name}_V{v.version}{suffix}",mime_type=mime)
-        db.add(PublishedArtifact(tenant_id=o.tenant_id,project_id=o.project_id,offer_version_id=v.id,file_artifact_id=artifact.id,kind=fmt,language=v.language,immutable=v.status not in {"Entwurf","zur Freigabe"},created_by=actor.user.id));db.commit()
+        response_suffix="_Antworten" if responses else ""
+        bytes_=path.read_bytes();artifact=persist_bytes(db,bytes_,tenant_id=o.tenant_id,project_id=o.project_id,filename=f"{o.offer_number}_{o.variant_name}_V{v.version}{response_suffix}{suffix}",mime_type=mime)
+        db.add(PublishedArtifact(tenant_id=o.tenant_id,project_id=o.project_id,offer_version_id=v.id,file_artifact_id=artifact.id,kind=fmt,language=v.language,immutable=v.status not in {"Entwurf","zur Freigabe"} and not responses,created_by=actor.user.id));db.commit()
         return {"artifact_id":str(artifact.id),"filename":artifact.filename,"sha256":artifact.sha256}
     finally:path.unlink(missing_ok=True)
 

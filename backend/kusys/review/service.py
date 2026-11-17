@@ -7,12 +7,14 @@ from sqlalchemy.orm import Session
 
 from kusys.persistence.models import Document, DocumentVersion, ExtractedBlock, ReviewRevision, Section, SectionRevision
 
-REQ_RE = re.compile(r"\b(muss|soll|shall|must|required|should)\b", re.I)
+REQ_RE = re.compile(r"\b(muss|müssen|soll|sollen|darf|dürfen|shall|must|required|should|möchte|unzulässig)\b", re.I)
 CONTEXT_RE = re.compile(r"\b(ist|besteht aus|current|existing|today)\b", re.I)
 
 
 def automatic_category(block: ExtractedBlock) -> tuple[str, str | None]:
     if block.block_type == "heading": return "context", None
+    if re.match(r"^[A-Z][A-Z0-9]{0,10}(?:[.-][A-Z]{1,6})?[-.]\d+[a-z]?\b", block.normalized_text, re.I) and len(block.normalized_text.split()) > 8:
+        return "requirement", None
     if CONTEXT_RE.search(block.normalized_text) and not REQ_RE.search(block.normalized_text): return "context", None
     if REQ_RE.search(block.normalized_text): return "requirement", None
     return "context", None

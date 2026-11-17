@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import io
-import json
 import re
 import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from kusys.common.config import get_settings
 
@@ -112,20 +109,80 @@ class DocumentService:
             for page_idx, page in enumerate(doc):
                 native = page_texts[page_idx]
                 selected = page.get_text("text") or ""
-                use_ocr = bool(ocr_path and len(normalize_text(selected)) >= len(normalize_text(native)))
+                use_ocr = bool(ocr_path and len(normalize_text(native)) < settings.ocr_threshold_chars_per_page and len(normalize_text(selected)) > len(normalize_text(native)))
                 source = "ocr" if use_ocr else "native"
-                page_blocks = page.get_text("blocks")
-                if not page_blocks and selected.strip():
-                    page_blocks = [(0, 0, 0, 0, selected, 0, 0)]
-                for block_idx, raw in enumerate(page_blocks):
-                    text = str(raw[4]).strip()
-                    if not text:
-                        continue
-                    coords = {"x0": raw[0], "y0": raw[1], "x1": raw[2], "y1": raw[3]}
-                    blocks.append(self._block(page_idx + 1, block_idx, "paragraph", text, coords=coords, text_source=source))
+                blocks.extend(self._pdf_layout(page, page_idx + 1, source))
         if ocr_path:
             ocr_path.unlink(missing_ok=True)
-        return blocks, {"page_count": len(page_texts), "whole_document_ocr": bool(needs_ocr), "ocr_available": ocr_available}
+        return blocks, {"page_count": len(page_texts), "whole_document_ocr": bool(ocr_path), "ocr_needed": needs_ocr, "layout_version": "layout-v2", "ocr_available": ocr_available}
+
+    def _pdf_layout(self, page, page_number: int, source: str) -> list[Extracted]:
+        """Keep table rows together and preserve paragraph geometry and reading order."""
+        import fitz
+        candidates = []
+        table_rects = []
+        try:
+            tables = page.find_tables().tables
+        except (AttributeError, RuntimeError, ValueError):
+            tables = []
+        for ti, table in enumerate(tables):
+            table_rects.append(fitz.Rect(table.bbox))
+            for ri, (row, cells) in enumerate(zip(table.rows, table.extract())):
+                text = " | ".join((cell or "").strip() for cell in cells)
+                if not text.strip(" |"):
+                    continue
+                x0, y0, x1, y1 = row.bbox
+                candidates.append((y0, x0, "table_row", text,
+                    {"x0": x0, "y0": y0, "x1": x1, "y1": y1, "page_width": page.rect.width, "page_height": page.rect.height},
+                    {"table": ti, "row": ri, "cells": cells}))
+        data = page.get_text("dict", sort=True)
+        font_sizes = [span["size"] for block in data["blocks"] if block.get("type") == 0 for line in block["lines"] for span in line["spans"] if span.get("text", "").strip()]
+        body_size = sorted(font_sizes)[len(font_sizes) // 2] if font_sizes else 10
+        for block in data["blocks"]:
+            if block.get("type") != 0:
+                continue
+            lines = []
+            sizes = []
+            boxes = []
+            def flush():
+                if not lines:
+                    return
+                text = "\n".join(lines).strip()
+                rect = fitz.Rect(boxes[0])
+                for box in boxes[1:]:
+                    rect |= fitz.Rect(box)
+                # Large short text is a heading, not a paragraph to be joined with its body.
+                kind = "heading" if len(text) < 180 and min(sizes, default=0) > body_size * 1.2 else "paragraph"
+                candidates.append((rect.y0, rect.x0, kind, text,
+                    {"x0": rect.x0, "y0": rect.y0, "x1": rect.x1, "y1": rect.y1, "page_width": page.rect.width, "page_height": page.rect.height, "line_boxes": list(boxes)}, None))
+                lines.clear(); sizes.clear(); boxes.clear()
+            for line in block["lines"]:
+                rect = fitz.Rect(line["bbox"])
+                # Tables were extracted by row; do not duplicate their words as paragraphs.
+                if any(table.contains(rect.tl + (rect.br - rect.tl) * .5) for table in table_rects):
+                    flush()
+                    continue
+                text = "".join(span.get("text", "") for span in line["spans"])
+                if text.strip():
+                    lines.append(text); boxes.append(line["bbox"])
+                    sizes.extend(span["size"] for span in line["spans"])
+            flush()
+        # Table detectors occasionally omit footnotes or repeat merged cells. Keep native
+        # blocks when token coverage differs; better a visible fragment than silent text loss.
+        from collections import Counter
+        tokens = lambda text: Counter(re.findall(r"\w+|[^\w\s|]", text))
+        if tokens("\n".join(item[3] for item in candidates)) != tokens(page.get_text("text")):
+            candidates = []
+            for raw in page.get_text("blocks", sort=True):
+                if len(raw) > 6 and raw[6] != 0:
+                    continue
+                if not str(raw[4]).strip():
+                    continue
+                x0, y0, x1, y1 = raw[:4]
+                candidates.append((y0, x0, "paragraph", str(raw[4]).strip(),
+                    {"x0": x0, "y0": y0, "x1": x1, "y1": y1, "page_width": page.rect.width, "page_height": page.rect.height, "layout_fallback": True}, None))
+        return [self._block(page_number, i, kind, text, coords=coords, table_meta=meta, text_source=source)
+                for i, (_, _, kind, text, coords, meta) in enumerate(sorted(candidates, key=lambda item: (round(item[0], 1), item[1])))]
 
     def _extract_docx(self, path: Path) -> tuple[list[Extracted], dict]:
         from docx import Document

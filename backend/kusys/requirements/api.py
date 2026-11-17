@@ -15,7 +15,7 @@ from kusys.common.security import utcnow
 from kusys.persistence.database import get_db
 from kusys.persistence.models import (
     ClarificationItem, Project, Requirement, RequirementRelation, RequirementRevision,
-    WorkPackageRequirement, Offer, OfferScopeItem, OfferVersion, MaterialItem,
+    Offer, OfferScopeItem, OfferVersion,
 )
 from kusys.services.calculation import load_calculation_inputs
 

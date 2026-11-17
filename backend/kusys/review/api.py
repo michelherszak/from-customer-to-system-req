@@ -17,6 +17,8 @@ router = APIRouter(tags=["review"])
 
 class RebuildRequest(BaseModel):
     source_selection: dict[str, str] = {}
+    preparation_job_id: uuid.UUID | None = None
+    expected_review_id: uuid.UUID | None = None
 
 class SectionUpdate(BaseModel):
     expected_version: int
@@ -52,7 +54,14 @@ def get_review(project_id: uuid.UUID, db: Session = Depends(get_db), actor: Acto
 def rebuild(project_id: uuid.UUID, payload: RebuildRequest, db: Session = Depends(get_db), actor: Actor = Depends(require_csrf)):
     require_project_access(db, actor, project_id, {"project_lead", "project_member", "company_admin"})
     p = db.get(Project, project_id)
-    r = rebuild_review(db, project_id, p.tenant_id, actor.user.id, payload.source_selection)
+    if payload.preparation_job_id:
+        from kusys.review.prepared import create_prepared_review
+        try:
+            r = create_prepared_review(db, project_id, p.tenant_id, actor.user.id, payload.preparation_job_id, payload.expected_review_id)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+    else:
+        r = rebuild_review(db, project_id, p.tenant_id, actor.user.id, payload.source_selection)
     db.commit(); db.refresh(r)
     return serialize_review(r)
 

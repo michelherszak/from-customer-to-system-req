@@ -23,7 +23,6 @@ Stable releases were selected; alpha/beta/RC releases were excluded.
 - python-docx 1.2.0
 - openpyxl 3.1.5
 - PyMuPDF 1.28.2
-- pdfplumber 0.11.10
 - OCRmyPDF 17.12.1
 - PyYAML 6.0.3
 - argon2-cffi 25.1.0
@@ -47,3 +46,9 @@ Stable releases were selected; alpha/beta/RC releases were excluded.
 - Playwright Test 1.63.0
 
 `kusys-environment.yaml`, `backend/pyproject.toml`, `backend/requirements.lock`, `apps/frontend/package.json`, and the Compose/Docker files are the machine-readable release references.
+
+## Ergänzung 2026-11-14: CrewAI
+- CrewAI 1.15.39, native SDKs für OpenAI/Anthropic/Google
+- Separate Python-3.13-Laufzeit, Basisimage per Digest fixiert
+- Vollständig aufgelöste Abhängigkeiten: `ops/crewai/requirements.lock`
+- Backend-/Frontend-Pins bleiben separat; die historischen Release-Manifeste vom September sind keine neue Release-Freigabe.

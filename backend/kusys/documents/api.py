@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import uuid
 from pathlib import Path
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -111,3 +112,52 @@ def blocks(version_id: uuid.UUID, db: Session = Depends(get_db), actor: Actor = 
     doc = db.get(Document, v.document_id); require_project_access(db, actor, doc.project_id)
     rows = db.scalars(select(ExtractedBlock).where(ExtractedBlock.document_version_id == version_id).order_by(ExtractedBlock.page_number, ExtractedBlock.block_index))
     return [{"id": str(b.id), "page_number": b.page_number, "block_index": b.block_index, "block_type": b.block_type, "source_text": b.source_text, "normalized_text": b.normalized_text, "coordinates": b.coordinates, "table_meta": b.table_meta, "text_source": b.text_source, "quality_status": b.quality_status} for b in rows]
+
+
+class PreparationRequest(BaseModel):
+    document_version_id: uuid.UUID
+    provider_config_id: uuid.UUID | None = None
+    model_id: str | None = None
+
+
+@router.post("/projects/{project_id}/document-preparations", status_code=202)
+def prepare_document(project_id: uuid.UUID, payload: PreparationRequest, db: Session = Depends(get_db), actor: Actor = Depends(require_csrf)):
+    from kusys.persistence.models import AIProviderConfig, Project
+    from kusys.common.config import get_settings
+    require_project_access(db, actor, project_id)
+    version = db.get(DocumentVersion, payload.document_version_id)
+    doc = db.get(Document, version.document_id) if version else None
+    if not doc or doc.project_id != project_id or doc.deleted_at or version.status != "ready":
+        raise HTTPException(422, "Nur fertig extrahierte Dokumentversionen dieses Projekts können aufbereitet werden")
+    model = None
+    if payload.provider_config_id:
+        cfg = db.get(AIProviderConfig, payload.provider_config_id)
+        project = db.get(Project, project_id)
+        if not cfg or cfg.tenant_id != project.tenant_id or not cfg.endpoint or not cfg.encrypted_api_key or (project.confidential and not cfg.confidential_allowed):
+            raise HTTPException(422, "Provider nicht für dieses Projekt freigegeben")
+        model = payload.model_id or (cfg.allowed_models[0] if cfg.allowed_models else None)
+        if not model or model not in (cfg.allowed_models or []):
+            raise HTTPException(422, "Kein freigegebenes Modell gewählt")
+    job = create_job(db, kind="document_prepare", tenant_id=doc.tenant_id, project_id=project_id,
+        payload={"document_version_id": str(version.id), "provider_config_id": str(payload.provider_config_id) if payload.provider_config_id else None, "model_id": model, "actor_id": str(actor.user.id)})
+    db.commit()
+    if get_settings().inline_jobs:
+        from kusys.documents.preparation_tasks import process_preparation
+        try:
+            process_preparation(db, job.id)
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(422, str(exc)) from exc
+    else:
+        from kusys.jobs.tasks import document_prepare_task
+        if document_prepare_task is None:
+            raise HTTPException(503, "Worker ist nicht verfügbar")
+        document_prepare_task.delay(str(job.id))
+    return {"job_id": str(job.id), "status": job.status}
+
+
+@router.get("/projects/{project_id}/document-preparations")
+def preparations(project_id: uuid.UUID, db: Session = Depends(get_db), actor: Actor = Depends(require_actor)):
+    from kusys.persistence.models import Job
+    require_project_access(db, actor, project_id)
+    rows = db.scalars(select(Job).where(Job.project_id == project_id, Job.kind == "document_prepare").order_by(Job.created_at.desc()).limit(10))
+    return [{"id": str(j.id), "status": j.status, "message": j.message, "result": j.result} for j in rows]

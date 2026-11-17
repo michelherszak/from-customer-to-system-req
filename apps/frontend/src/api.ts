@@ -1,3 +1,5 @@
+import { formatHttpError, readHttpError } from './httpErrors'
+
 const API = import.meta.env.VITE_API_URL ?? '/api/v1'
 let csrfToken = sessionStorage.getItem('kusys_csrf') ?? ''
 
@@ -12,12 +14,7 @@ export async function api<T = any>(path: string, init: RequestInit = {}): Promis
   if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) headers.set('X-CSRF-Token', csrfToken)
   const res = await fetch(`${API}${path}`, { ...init, headers, credentials: 'include' })
-  if (!res.ok) {
-    let detail: any
-    try { detail = await res.json() } catch { detail = await res.text() }
-    const msg = typeof detail === 'object' ? JSON.stringify(detail.detail ?? detail) : String(detail)
-    throw new Error(msg || `${res.status} ${res.statusText}`)
-  }
+  if (!res.ok) throw new Error(await readHttpError(res))
   const contentType = res.headers.get('content-type') ?? ''
   return contentType.includes('application/json') ? res.json() : (res as any)
 }
@@ -51,7 +48,7 @@ export function uploadDocument(projectId: string, file: File, onProgress: (perce
       let data: any
       try { data = JSON.parse(xhr.responseText) } catch { data = xhr.responseText }
       if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(typeof data === 'object' ? JSON.stringify(data.detail ?? data) : String(data)))
+        reject(new Error(formatHttpError(xhr.responseText, xhr.status, xhr.statusText)))
       } else resolve(data)
     }
     xhr.send(form)

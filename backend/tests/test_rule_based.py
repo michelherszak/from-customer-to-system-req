@@ -1,4 +1,4 @@
-from kusys.analysis.rule_based import RuleBasedAnalysisProvider
+from tests.engineering_rules import RuleBasedAnalysisProvider
 
 
 def test_US13_AC_06_deterministic_requirement_extraction():

@@ -39,6 +39,7 @@ class SoftDeleteMixin:
 
 class Tenant(Base, IdMixin, TimestampMixin, LockMixin):
     __tablename__ = "tenant"
+    agent_settings: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     name: Mapped[str] = mapped_column(String(200), unique=True)
     address: Mapped[str | None] = mapped_column(Text)
     country: Mapped[str] = mapped_column(String(2), default="DE")
@@ -435,6 +436,35 @@ class OfferVersion(Base, IdMixin, TimestampMixin, LockMixin):
     approved_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("user_account.id"))
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (UniqueConstraint("offer_id", "version"),)
+
+
+class OfferResponse(Base, IdMixin, TimestampMixin):
+    __tablename__ = "offer_response"
+    offer_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("offer_version.id"), index=True)
+    author_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("user_account.id"), nullable=True)
+    author_name: Mapped[str] = mapped_column(String(200))
+    author_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    channel: Mapped[str] = mapped_column(String(16), default="portal")
+    provider_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
+    body: Mapped[str] = mapped_column(Text)
+
+
+class GmailConnection(Base, IdMixin, TimestampMixin):
+    __tablename__ = "gmail_connection"
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenant.id"), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_account.id"), index=True)
+    email: Mapped[str] = mapped_column(String(320))
+    encrypted_refresh_token: Mapped[str] = mapped_column(Text)
+    __table_args__ = (UniqueConstraint("tenant_id", "user_id"),)
+
+
+class GmailOfferThread(Base, IdMixin, TimestampMixin):
+    __tablename__ = "gmail_offer_thread"
+    offer_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("offer_version.id"), index=True)
+    gmail_connection_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("gmail_connection.id"), index=True)
+    gmail_thread_id: Mapped[str] = mapped_column(String(255))
+    recipient_email: Mapped[str] = mapped_column(String(320))
+    __table_args__ = (UniqueConstraint("offer_version_id", "gmail_thread_id"),)
 
 
 class OfferScopeItem(Base, IdMixin, TimestampMixin):

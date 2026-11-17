@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from kusys.analysis.impact import ImpactAnalysisService
 from kusys.planning.engine import PlanningEngine, RoleCapacity, WorkPackage
 from kusys.pricing.engine import MaterialItem, PricedWorkPackage, PricingEngine, Rate
 from kusys.requirements.domain import Priority, RelationType, Requirement, RequirementGraph, RequirementRelation

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,7 +12,7 @@ from kusys.auth.service import Actor, require_actor, require_csrf, require_proje
 from kusys.common.locking import bump_version, check_expected_version
 from kusys.persistence.database import get_db
 from kusys.persistence.models import (
-    Project, RateCard, RateCardRole, WorkPackage as WPModel, WorkPackageDependency, WorkPackageRequirement, WorkPackageRevision,
+    Project, RateCardRole, WorkPackage as WPModel, WorkPackageDependency, WorkPackageRequirement, WorkPackageRevision,
 )
 from kusys.planning.engine import PlanningEngine, PlanningError
 from kusys.services.calculation import ensure_project_rate_card, ensure_tenant_rate_card, load_calculation_inputs
@@ -54,11 +54,11 @@ class DependencyCreate(BaseModel):
 
 class RateUpdate(BaseModel):
     expected_version: int
-    capacity_fte: Decimal | None = None
-    internal_cost_rate: Decimal | None = None
-    purchase_rate: Decimal | None = None
+    capacity_fte: Decimal | None = Field(default=None, ge=0)
+    internal_cost_rate: Decimal | None = Field(default=None, ge=0)
+    purchase_rate: Decimal | None = Field(default=None, ge=0)
     markup_percent: Decimal | None = None
-    sales_rate: Decimal | None = None
+    sales_rate: Decimal | None = Field(default=None, ge=0)
 
 
 def validate_hours(min_h: int, likely: int, max_h: int) -> None:

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from math import ceil
 
 from kusys.planning.engine import PlanningEngine, RoleCapacity, WorkPackage
 from kusys.pricing.engine import MaterialItem, PricedWorkPackage, PricingEngine, Rate

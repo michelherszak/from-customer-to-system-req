@@ -220,13 +220,11 @@ class PlanningEngine:
             # Dependency criticality first, then user planning priority and stable order/id.
             ready.sort(key=lambda pid: (cpm_float[pid], -by_id[pid].priority, order_index[pid], pid))
             available = dict(capacities_by_role)
-            allocated_any = False
             for pid in ready:
                 p = by_id[pid]
                 fte = min(p.max_fte, available.get(p.role, 0.0))
                 if fte <= 1e-9:
                     continue
-                allocated_any = True
                 started.add(pid)
                 starts.setdefault(pid, day)
                 workdays_used[pid] += 1

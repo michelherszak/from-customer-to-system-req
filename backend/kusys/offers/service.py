@@ -18,6 +18,10 @@ from kusys.planning.engine import PlanningEngine
 from kusys.pricing.engine import PricingEngine
 from kusys.services.calculation import load_calculation_inputs
 
+class OfferCalculationError(ValueError):
+    """A draft cannot be priced or scheduled with the current project inputs."""
+
+
 STATUS_FLOW = {
     "Entwurf": {"zur Freigabe"},
     "zur Freigabe": {"Entwurf", "freigegeben"},
@@ -57,8 +61,11 @@ def preview(db: Session, version: OfferVersion) -> dict:
     project = db.get(Project, offer.project_id)
     included = scope_ids(db, version)
     _, graph, wps, priced, rates, capacities, materials, budgets, start, holidays, hpd, weekdays = load_calculation_inputs(db, project.id, included)
-    schedule = PlanningEngine().schedule(wps, capacities, start, holidays, hpd, weekdays)
-    pricing = PricingEngine().calculate(priced, rates, materials, budgets, Decimal(version.risk_percent), Decimal(version.discount_percent), Decimal(version.vat_percent))
+    try:
+        schedule = PlanningEngine().schedule(wps, capacities, start, holidays, hpd, weekdays)
+        pricing = PricingEngine().calculate(priced, rates, materials, budgets, Decimal(version.risk_percent), Decimal(version.discount_percent), Decimal(version.vat_percent))
+    except ValueError as exc:
+        raise OfferCalculationError(str(exc)) from None
     req_rows = {str(r.id): r for r in db.scalars(select(Requirement).where(Requirement.project_id == project.id, Requirement.id.in_(included)))} if included else {}
     attribution = []
     for a in pricing.attribution:

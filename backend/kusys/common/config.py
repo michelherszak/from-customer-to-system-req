@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="KUSYS_", env_file=".env", extra="ignore")
 
     database_url: str = "sqlite:///./kusys-dev.db"
+    crew_runtime_url: str = "http://crew-runtime:8080"
+    crew_runtime_token: str = ""
     redis_url: str = "redis://localhost:6379/0"
     storage_path: Path = Path("./artifacts")
     master_key: str = "development-only-change-me"
@@ -67,6 +69,9 @@ class Settings(BaseSettings):
     secure_cookies: bool = False
     inline_jobs: bool = True
     frontend_origin: str = "http://localhost:5173"
+    gmail_client_id: str = ""
+    gmail_client_secret: str = ""
+    gmail_redirect_uri: str = "http://localhost:5183/api/v1/gmail/callback"
     ocr_threshold_chars_per_page: int = 120
     max_upload_bytes: int = 200 * 1024 * 1024
     max_pdf_pages: int = 500

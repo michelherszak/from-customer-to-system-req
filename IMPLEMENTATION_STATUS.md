@@ -14,7 +14,7 @@ Enthalten sind insbesondere:
 - serverseitige Sessions, CSRF, Argon2id, Login-Sperren, verschlüsselte externe Secrets und autorisierter Artefaktzugriff;
 - Projekte/Kunden, Dokument- und Versionsverwaltung, PDF/DOCX/PNG-Extraktion und lokaler OCR-Pfad;
 - versionierter Prüfschritt mit Freigabe, Bearbeiten, Ausschließen, Soft-Delete, Wiederherstellen, Teilen und Zusammenführen;
-- unveränderliche Analyseläufe, deterministischer Offline-Provider und OpenAI-kompatibler Provideradapter mit Modellfreigaben und Usage-/Preiserfassung;
+- unveränderliche Analyseläufe, CrewAI-Executor mit Modellkatalog, verschlüsselten API-Schlüsseln, Modellfreigaben und Usage-Erfassung;
 - Anforderungen, Revisionen, Budgets, Klärungspunkte, Relationen, Baselines, Kostenattribution und transitive nicht-destruktive What-if-/Impact-Analyse;
 - Arbeitspakete, Abhängigkeiten, Firmen-Rate-Card → unabhängige Projektkopie, interne/externe Sätze, FTE-Kapazitäten, Arbeitskalender und Feiertage;
 - Resource Leveling, PERT-Risikokennzahl, Vorwärts-/Rückwärtsrechnung, Float und kritischer Pfad;

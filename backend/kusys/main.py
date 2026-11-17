@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from kusys.offers.service import OfferCalculationError
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
@@ -28,14 +30,20 @@ from kusys.portal.api import router as portal_router
 from kusys.commercial.api import router as commercial_router
 from kusys.calendars.api import router as calendar_router
 from kusys.ai_config.api import router as ai_config_router
+from kusys.gmail_api import router as gmail_router
 
 settings=get_settings()
 app=FastAPI(title="KuSys API",version=settings.app_version,description="Kundendokument → Prüfschritt → Anforderungen → Arbeitspakete → Terminplan → Angebot")
 app.add_middleware(AuditMiddleware)
 app.add_middleware(CORSMiddleware,allow_origins=[settings.frontend_origin],allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
 
-for router in [auth_router,user_router,tenancy_router,customer_router,project_router,document_router,review_router,analysis_router,requirement_router,planning_router,baseline_router,offer_router,template_router,job_router,artifact_router,presence_router,audit_router,portal_router,commercial_router,calendar_router,ai_config_router]:
+for router in [auth_router,user_router,tenancy_router,customer_router,project_router,document_router,review_router,analysis_router,requirement_router,planning_router,baseline_router,offer_router,template_router,job_router,artifact_router,presence_router,audit_router,portal_router,commercial_router,calendar_router,ai_config_router,gmail_router]:
     app.include_router(router,prefix="/api/v1")
+
+@app.exception_handler(OfferCalculationError)
+async def offer_calculation_error(_request, exc: OfferCalculationError):
+    return JSONResponse(status_code=422, content={"detail": f"Angebotskalkulation nicht möglich: {exc}"})
+
 
 @app.get("/api/v1/health")
 def health():

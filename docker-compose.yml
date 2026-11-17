@@ -37,8 +37,13 @@ services:
       KUSYS_STORAGE_PATH: /data/artifacts
       KUSYS_MASTER_KEY: ${KUSYS_MASTER_KEY:-development-only-change-me}
       KUSYS_INLINE_JOBS: "false"
+      KUSYS_CREW_RUNTIME_URL: http://crew-runtime:8080
+      KUSYS_CREW_RUNTIME_TOKEN: ${KUSYS_CREW_TOKEN:?KUSYS_CREW_TOKEN fehlt in .env}
       KUSYS_SECURE_COOKIES: ${KUSYS_SECURE_COOKIES:-false}
       KUSYS_FRONTEND_ORIGIN: ${KUSYS_FRONTEND_ORIGIN:-http://localhost:5173}
+      KUSYS_GMAIL_CLIENT_ID: ${KUSYS_GMAIL_CLIENT_ID:-}
+      KUSYS_GMAIL_CLIENT_SECRET: ${KUSYS_GMAIL_CLIENT_SECRET:-}
+      KUSYS_GMAIL_REDIRECT_URI: ${KUSYS_GMAIL_REDIRECT_URI:-http://localhost:5183/api/v1/gmail/callback}
       KUSYS_CONFIG_FILE: /app/config/kusys.example.yaml
     volumes:
       - artifacts_data:/data/artifacts
@@ -58,6 +63,8 @@ services:
     volumes:
       - artifacts_data:/data/artifacts
     depends_on:
+      crew-runtime:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
     healthcheck:
@@ -76,6 +83,8 @@ services:
     volumes:
       - artifacts_data:/data/artifacts
     depends_on:
+      crew-runtime:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
       redis:
@@ -91,10 +100,25 @@ services:
     volumes:
       - artifacts_data:/data/artifacts
     depends_on:
+      crew-runtime:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+    restart: unless-stopped
+
+  crew-runtime:
+    build:
+      context: .
+      dockerfile: ops/crewai/Dockerfile
+    environment:
+      KUSYS_CREW_TOKEN: ${KUSYS_CREW_TOKEN:?KUSYS_CREW_TOKEN fehlt in .env}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
     restart: unless-stopped
 
   frontend:

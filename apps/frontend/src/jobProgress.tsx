@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { Alert, Box, Button, Card, CardContent, LinearProgress, Stack, Typography } from '@mui/material'
 import { api } from './api'
 
-type JobKind = 'document_extract' | 'analysis'
+type JobKind = 'document_extract' | 'document_prepare' | 'analysis'
 type JobStatus = 'queued' | 'running' | 'activating' | 'succeeded' | 'failed' | 'cancelled'
 type TrackedJob = {
   id: string
@@ -102,17 +102,15 @@ export function JobProgressProvider({ children }: { children: React.ReactNode })
             const snapshot = await api<JobSnapshot>(`/jobs/${job.id}`)
             if (stopped) return
             if (snapshot.status === 'succeeded' && job.kind === 'analysis' && job.runId) {
-              updateJob(job.id, { status: 'activating', progress: 99, message: 'Ergebnisse werden übernommen' })
-              try {
-                await api(`/analysis-runs/${job.runId}/activate`, { method: 'POST' })
-              } catch (error) {
-                const runs = await api<Array<{ id: string; status: string }>>(`/projects/${job.projectId}/analysis-runs`)
-                if (!runs.some(run => run.id === job.runId && run.status === 'activated')) {
-                  updateJob(job.id, { status: 'failed', message: `Analyse abgeschlossen, aber Aktivierung fehlgeschlagen: ${String(error)}`, finishedAt: Date.now() })
-                  continue
-                }
+              const runs = await api<Array<{ id: string; status: string; result?: { quality?: { status: string } } }>>(`/projects/${job.projectId}/analysis-runs`)
+              const run = runs.find(item => item.id === job.runId)
+              const quality = run?.result?.quality?.status
+              // New engineering runs are reviewed/accepted explicitly on the requirements page.
+              if (quality) {
+                updateJob(job.id, { status: 'succeeded', progress: 100, message: quality === 'blocked' ? 'Review mit offenen Blockern: siehe Anforderungen → Engineering & Review' : 'Engineering abgeschlossen: unter Anforderungen prüfen und übernehmen', finishedAt: Date.now() })
+              } else {
+                updateJob(job.id, { status: 'succeeded', progress: 100, message: 'Analyse abgeschlossen; unter Anforderungen prüfen', finishedAt: Date.now() })
               }
-              updateJob(job.id, { status: 'succeeded', progress: 100, message: 'Analyse abgeschlossen; Anforderungen sind bereit', finishedAt: Date.now() })
               window.dispatchEvent(new CustomEvent('kusys-job-finished', { detail: { projectId: job.projectId, kind: job.kind } }))
             } else if (snapshot.status === 'succeeded') {
               updateJob(job.id, { status: 'succeeded', progress: 100, message: snapshot.message || 'Verarbeitung abgeschlossen', finishedAt: Date.now() })
@@ -142,7 +140,7 @@ export function JobProgressProvider({ children }: { children: React.ReactNode })
   return <JobContext.Provider value={{ jobs, trackJob, dismissJob, clearJobs }}>
     {children}
     {jobs.length > 0 && <Box role="status" aria-live="polite" sx={{ position: 'fixed', right: 16, bottom: 16, width: 360, maxWidth: 'calc(100vw - 32px)', maxHeight: '60vh', overflowY: 'auto', zIndex: 1500 }}>
-      <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', boxShadow: '0 16px 40px rgba(15,23,42,0.12)', borderRadius: 3 }}>
+      <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', boxShadow: '0 16px 40px rgba(21,23,46,0.14)', borderRadius: '16px' }}>
         <CardContent>
           <Typography variant="h6" sx={{ mb: 1 }}>Aktivitäten</Typography>
           <Stack spacing={1.5}>

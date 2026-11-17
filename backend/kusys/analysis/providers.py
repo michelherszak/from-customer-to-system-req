@@ -1,153 +1,82 @@
+"""All production role execution goes through the private CrewAI runtime."""
 from __future__ import annotations
-
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, asdict
-import re
-
-from kusys.analysis.rule_based import RuleBasedAnalysisProvider
-
-
-@dataclass(frozen=True, slots=True)
-class RequirementSuggestion:
-    text: str
-    priority: str
-    title: str
-    source_section_id: str
-
-@dataclass(frozen=True, slots=True)
-class WorkPackageSuggestion:
-    name: str
-    description: str
-    role: str
-    min_hours: int
-    likely_hours: int
-    max_hours: int
-    phase: str
-    requirement_indexes: tuple[int, ...]
-
-@dataclass(frozen=True, slots=True)
-class ClarificationSuggestion:
-    text: str
-    source_section_id: str
-
-@dataclass(frozen=True, slots=True)
-class AnalysisOutput:
-    requirements: tuple[RequirementSuggestion, ...]
-    work_packages: tuple[WorkPackageSuggestion, ...]
-    clarifications: tuple[ClarificationSuggestion, ...]
-
-    def to_json(self) -> dict:
-        return {
-            "requirements": [asdict(x) for x in self.requirements],
-            "work_packages": [asdict(x) for x in self.work_packages],
-            "clarifications": [asdict(x) for x in self.clarifications],
-        }
+import json
+import urllib.error
+import urllib.request
+from typing import Protocol
+from pydantic import BaseModel
+from kusys.common.config import get_settings
+from kusys.analysis.prompts import PROMPTS
 
 
-class AIProvider(ABC):
+class AIProvider(Protocol):
     provider_id: str
     model_id: str
-
-    @abstractmethod
-    def analyze(self, sections: list[tuple[str, str]], language: str = "de") -> AnalysisOutput: ...
+    def run_role(self, role: str, context: dict, schema: type[BaseModel]) -> dict: ...
 
 
-class DeterministicProvider(AIProvider):
-    provider_id = "rule-based"
-    model_id = "rule-based-v1"
-    role_terms = {
-        "software": "Software Engineering",
-        "schnittstelle": "Software Engineering",
-        "api": "Software Engineering",
-        "elektr": "Electrical Engineering",
-        "schalt": "Electrical Engineering",
-        "mechan": "Mechanical Engineering",
-        "sicherheit": "Safety Engineering",
-        "security": "Security Engineering",
-        "test": "Test Engineering",
-        "abnahme": "Test Engineering",
-        "dokument": "Documentation",
-    }
+class ProviderExecutionError(ValueError):
+    """Contains only a curated diagnostic, never raw SDK response text."""
+    def __init__(self, message, code, http_status=None, validation_issues=None, upstream_status=None):
+        super().__init__(message)
+        self.diagnostic_code = code
+        self.http_status = http_status
+        self.diagnostic_message = message
+        self.validation_issues = validation_issues or []
+        self.upstream_status = upstream_status if isinstance(upstream_status, int) else None
 
-    def analyze(self, sections: list[tuple[str, str]], language: str = "de") -> AnalysisOutput:
-        requirements: list[RequirementSuggestion] = []
-        clarifications: list[ClarificationSuggestion] = []
-        fallback = RuleBasedAnalysisProvider()
-        for section_id, text in sections:
-            for item in fallback.extract_requirements(text):
-                normalized = item.text.strip()
-                title = re.sub(r"^(Das System soll|The system shall)\s+", "", normalized, flags=re.I)
-                title = title[:90].rstrip(" .") or "Anforderung"
-                requirements.append(RequirementSuggestion(normalized, item.priority, title, section_id))
-            if re.search(r"\b(TBD|TBC|unklar|offen|to be defined|to be clarified)\b", text, re.I):
-                clarifications.append(ClarificationSuggestion(f"Klärung erforderlich: {text[:220]}", section_id))
-        # Fallback must never silently drop approved requirement sections. If modal detection failed,
-        # treat the entire approved section as a requirement with a review-oriented priority.
-        covered = {x.source_section_id for x in requirements}
-        for section_id, text in sections:
-            if section_id not in covered and text.strip():
-                prefix = "Das System soll " if language.lower().startswith("de") else "The system shall "
-                cleaned = text.strip().rstrip(".")
-                requirements.append(RequirementSuggestion(prefix + cleaned + ".", "soll", cleaned[:90], section_id))
-        packages: list[WorkPackageSuggestion] = []
-        for i, req in enumerate(requirements):
-            role = self._role_for(req.text)
-            likely = self._hours_for(req.text)
-            packages.append(WorkPackageSuggestion(
-                name=f"Umsetzung {req.title}"[:300],
-                description=f"Arbeitspaket zur Anforderung: {req.text}",
-                role=role,
-                min_hours=max(0, int(likely * 0.7)),
-                likely_hours=likely,
-                max_hours=max(likely, int(likely * 1.5)),
-                phase="Realisierung",
-                requirement_indexes=(i,),
-            ))
-        return AnalysisOutput(tuple(requirements), tuple(packages), tuple(clarifications))
 
-    def _role_for(self, text: str) -> str:
-        low = text.lower()
-        for term, role in self.role_terms.items():
-            if term in low: return role
-        return "Systems Engineering"
+class CrewAIProvider:
+    engine = "crewai"
+    def __init__(self, provider_id: str, endpoint: str, api_key: str, model_id: str, timeout_seconds: int = 180):
+        self.provider_id = provider_id
+        self.endpoint = endpoint
+        self.api_key = api_key
+        self.model_id = model_id
+        self.timeout_seconds = timeout_seconds
+        self.input_tokens = self.output_tokens = 0
+        self.instructions = {}
 
-    @staticmethod
-    def _hours_for(text: str) -> int:
-        n = len(text)
-        base = 16 if n < 120 else 32 if n < 300 else 48
-        if re.search(r"\b(muss|must|shall)\b", text, re.I): base += 8
-        return base
+    def effective_prompt(self, role):
+        extra = self.instructions.get(role, "").strip()
+        return PROMPTS[role] + ("\nZusätzliche Firmenanweisungen (Rollenabgrenzung, Quellenregeln und Ausgabeschema bleiben verbindlich):\n" + extra if extra else "")
 
-class OpenAICompatibleProvider(AIProvider):
-    """Provider for OpenAI-compatible chat-completions endpoints.
-
-    The adapter deliberately depends only on the Python standard library so the deterministic
-    fallback remains deployable offline. The remote model is required to return JSON only.
-    """
-    def __init__(self, provider_id: str, endpoint: str, api_key: str, model_id: str, timeout_seconds: int = 90):
-        self.provider_id=provider_id;self.endpoint=endpoint.rstrip('/');self.api_key=api_key;self.model_id=model_id;self.timeout_seconds=timeout_seconds
-        self.input_tokens=0;self.output_tokens=0
-
-    def analyze(self, sections: list[tuple[str, str]], language: str = "de") -> AnalysisOutput:
-        import json, urllib.request
-        schema={"requirements":[{"text":"string","priority":"muss|soll|kann","title":"string","source_section_id":"string"}],"work_packages":[{"name":"string","description":"string","role":"string","min_hours":0,"likely_hours":0,"max_hours":0,"phase":"Konzept|Spezifikation|Realisierung|Integration|Abnahme|Übergreifend","requirement_indexes":[0]}],"clarifications":[{"text":"string","source_section_id":"string"}]}
-        system=("Du bist Requirements Engineer und Projektplaner. Gib ausschließlich valides JSON ohne Markdown zurück. "
-                "Erzeuge atomare Anforderungen, nachvollziehbare Arbeitspakete und Klärungspunkte. Schema: "+json.dumps(schema,ensure_ascii=False))
-        user=json.dumps({"language":language,"sections":[{"id":sid,"text":text} for sid,text in sections]},ensure_ascii=False)
-        payload=json.dumps({"model":self.model_id,"temperature":0,"response_format":{"type":"json_object"},"messages":[{"role":"system","content":system},{"role":"user","content":user}]},ensure_ascii=False).encode('utf-8')
-        url=self.endpoint if self.endpoint.endswith('/chat/completions') else self.endpoint+'/chat/completions'
-        req=urllib.request.Request(url,data=payload,headers={"Authorization":f"Bearer {self.api_key}","Content-Type":"application/json"},method='POST')
-        with urllib.request.urlopen(req,timeout=self.timeout_seconds) as response:
-            raw=json.loads(response.read().decode('utf-8'))
-        usage=raw.get('usage') or {};self.input_tokens+=int(usage.get('prompt_tokens') or usage.get('input_tokens') or 0);self.output_tokens+=int(usage.get('completion_tokens') or usage.get('output_tokens') or 0)
-        content=raw['choices'][0]['message']['content'];data=json.loads(content)
-        reqs=[]
-        for x in data.get('requirements',[]):
-            reqs.append(RequirementSuggestion(str(x['text']),str(x.get('priority','soll')),str(x.get('title') or 'Anforderung')[:300],str(x['source_section_id'])))
-        wps=[]
-        for x in data.get('work_packages',[]):
-            mn=max(0,int(x.get('min_hours',0)));likely=max(mn,int(x.get('likely_hours',mn)));mx=max(likely,int(x.get('max_hours',likely)))
-            wps.append(WorkPackageSuggestion(str(x.get('name') or 'Arbeitspaket')[:300],str(x.get('description') or ''),str(x.get('role') or 'Systems Engineering'),mn,likely,mx,str(x.get('phase') or 'Realisierung'),tuple(int(i) for i in x.get('requirement_indexes',[]))))
-        cls=tuple(ClarificationSuggestion(str(x.get('text') or ''),str(x['source_section_id'])) for x in data.get('clarifications',[]) if x.get('source_section_id'))
-        if not reqs: raise ValueError('Provider lieferte keine Anforderungen')
-        return AnalysisOutput(tuple(reqs),tuple(wps),cls)
+    def run_role(self, role: str, context: dict, schema: type[BaseModel]) -> dict:
+        settings = get_settings()
+        if not settings.crew_runtime_token:
+            raise ValueError("CrewAI-Laufzeit ist nicht konfiguriert")
+        payload = {"provider": self.provider_id, "endpoint": self.endpoint, "api_key": self.api_key,
+                   "model": self.model_id, "role": role, "prompt": self.effective_prompt(role), "context": context}
+        request = urllib.request.Request(settings.crew_runtime_url.rstrip("/") + "/execute",
+            data=json.dumps(payload).encode(), headers={"Content-Type": "application/json", "Authorization": "Bearer " + settings.crew_runtime_token}, method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                output = json.load(response)
+        except urllib.error.HTTPError as exc:
+            try:
+                failure = json.load(exc)
+                code = failure.get("error")
+            except (ValueError, TypeError):
+                code = None
+                failure = {}
+            messages = {
+                "cloud_billing_required": "Cloud-Guthaben ist zu niedrig oder die Abrechnung ist nicht freigeschaltet. Beim Modellanbieter Guthaben und Abrechnung prüfen; anschließend ab dem letzten Checkpoint fortsetzen.",
+                "cloud_context_exceeded": "Das Eingabepaket überschreitet das Kontextlimit des Cloud-Modells. Paketgröße und Review-Kontext reduzieren.",
+                "cloud_request_invalid": "Der Cloud-Anbieter hat die Anfrage als ungültig abgewiesen (HTTP 400). Modellparameter und Anfrageformat prüfen.",
+                "cloud_timeout": "Zeitlimit bei der Cloud-Ableitung überschritten. Die Aufgabe muss in kleinere Teile aufgeteilt werden.",
+                "cloud_response_invalid": "Die Modellantwort passt nicht zum Ausgabeschema. Ableitung wurde nicht übernommen.",
+                "cloud_workspace_required": "Anthropic: Der API-Schlüssel ist keinem Workspace zugeordnet. Bitte einen API-Schlüssel aus dem gewünschten Workspace hinterlegen.",
+                "cloud_auth_failed": "Cloud-Anbieter hat den API-Schlüssel abgewiesen. Schlüssel und Anbieter prüfen.",
+                "cloud_quota_exceeded": "Cloud-Kontingent oder Rate-Limit erreicht. Anbieter-Kontingent prüfen oder später erneut versuchen.",
+                "cloud_model_unavailable": "Das ausgewählte Modell ist für diesen Anbieterzugang nicht verfügbar.",
+                "unauthorized": "Interne CrewAI-Authentifizierung fehlgeschlagen.",
+            }
+            raise ProviderExecutionError(messages.get(code, f"CrewAI-Ausführung fehlgeschlagen (HTTP {exc.code}); Modellzugang und Laufzeit prüfen"), code if code in messages else "crewai_execution_failed", exc.code, failure.get("validation_issues", []) if code == "cloud_response_invalid" else [], failure.get("upstream_status")) from None
+        except (urllib.error.URLError, TimeoutError):
+            raise ProviderExecutionError("CrewAI-Laufzeit nicht erreichbar oder Zeitlimit überschritten", "runtime_unreachable") from None
+        if output.get("engine") != "crewai":
+            raise ValueError("Ungültige Antwort der CrewAI-Laufzeit")
+        validated = schema.model_validate(output["result"]).model_dump(mode="json")
+        self.input_tokens += int(output.get("input_tokens") or 0)
+        self.output_tokens += int(output.get("output_tokens") or 0)
+        return validated

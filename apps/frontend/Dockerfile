@@ -1,7 +1,7 @@
 FROM node:26.10.0-alpine3.24 AS build
 WORKDIR /app
 COPY package*.json ./
-RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
+RUN npm ci --no-audit --no-fund
 COPY . .
 RUN npm run build
 
